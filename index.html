@@ -611,6 +611,10 @@ const DOW=['日','一','二','三','四','五','六'];
 const ADMIN_PW='1234';
 /* Notion 資料庫 data_source_id（相機資料庫）*/
 const NOTION_DS='5b800b8b-6190-402e-826a-ada1d2fdd096';
+const NOTION_SCHEDULE_DS='7ce8de9a-cb7a-43f7-89c7-e140a5d567ef'; // 新排班資料庫
+const LS_KEY='linxiang_shifts_v1';
+const NOTION_SCHEDULE_DS='7ce8de9a-cb7a-43f7-89c7-e140a5d567ef'; // 新排班資料庫
+const LS_KEY='linxiang_shifts_v1'; // localStorage key
 
 /* ══════════════════════════════════════
    ALL_SHIFTS：同時儲存 EX 歷史班表 + 員工本次新填的班次
@@ -714,6 +718,7 @@ function goStep(s){
     hn.textContent=me;hn.style.background=S.bg;hn.style.color=S.t;
     document.getElementById('mlbl').textContent=CY+'年 '+MN[CM-1];
     document.getElementById('prog-wrap').style.display=isPT(me)?'none':'';
+    loadFromLS(); // 從localStorage讀取已儲存的班次
     rCal();rListView();updInfo();updList();closeDP();
     setTimeout(()=>{const el=document.getElementById('today-cell');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},300);
   }
@@ -965,6 +970,21 @@ function openDP(y,m,d){
   setTimeout(()=>document.getElementById('dp-wrap').scrollIntoView({behavior:'smooth',block:'nearest'}),60);
 }
 
+function saveToLS(){
+  try{localStorage.setItem(LS_KEY,JSON.stringify(ALL_SHIFTS));}catch(e){}
+}
+function loadFromLS(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(!raw)return;
+    const saved=JSON.parse(raw);
+    // 只載入當前員工的資料
+    if(saved[me]){
+      if(!ALL_SHIFTS[me])ALL_SHIFTS[me]={};
+      Object.assign(ALL_SHIFTS[me],saved[me]);
+    }
+  }catch(e){}
+}
 function setShift(t){
   const k=key(selDay.y,selDay.m,selDay.d);
   if(!ALL_SHIFTS[me])ALL_SHIFTS[me]={};
@@ -976,6 +996,7 @@ function setShift(t){
   }else{
     ALL_SHIFTS[me][k]=t;
   }
+  saveToLS(); // 自動儲存到localStorage
   const cell=document.querySelector('.cc.picked');if(cell){cell.classList.add('flash');setTimeout(()=>cell.classList.remove('flash'),400);}
   updInfo();updList();if(curView==='cal')rCal();else rListView();openDP(selDay.y,selDay.m,selDay.d);
 }
@@ -986,6 +1007,7 @@ function clearDay(){
   if(!ALL_SHIFTS[me])ALL_SHIFTS[me]={};
   const inEX=EX[k]&&EX[k].find(x=>x.s===me);
   if(inEX){ALL_SHIFTS[me][k]='__DEL__';}else{delete ALL_SHIFTS[me][k];}
+  saveToLS();
   updInfo();updList();if(curView==='cal')rCal();else rListView();openDP(selDay.y,selDay.m,selDay.d);
 }
 function closeDP(){selDay=null;document.getElementById('dp-wrap').style.display='none';if(curView==='cal')rCal();else rListView();}
@@ -1041,6 +1063,7 @@ function delS(k){
   const inEX=EX[k]&&EX[k].find(x=>x.s===me);
   if(inEX){ALL_SHIFTS[me][k]='__DEL__';}  // EX歷史：標記為已刪除
   else{delete ALL_SHIFTS[me][k];}           // 自填的：直接刪
+  saveToLS();
   updInfo();updList();if(curView==='cal')rCal();else rListView();
 }
 
@@ -1206,11 +1229,58 @@ async function startNotionImport(){
 }
 
 /* ── submit ── */
-function doSubmit(){
+async function doSubmit(){
   const{rem,work,required,remReq}=getStats();
   if(rem<0){if(!confirm('特休超額 '+(-rem)+' 天，確定送出嗎？'))return;}
   if(!isPT(me)&&remReq>0){if(!confirm('本月應排班 '+required+' 天，目前只填了 '+work+' 天，還差 '+remReq+' 天。確定要送出嗎？'))return;}
+  saveToLS();
   goStep(2);
+  // 背景同步到Notion（不阻塞畫面）
+  syncToNotion().catch(e=>console.warn('Notion sync failed:',e));
+}
+
+async function syncToNotion(){
+  // 合併EX歷史 + 本次填寫
+  const combined={};
+  Object.entries(EX).forEach(([k,arr])=>{
+    const p=k.split('-');if(+p[1]!==CM)return;
+    const mine=arr.find(x=>x.s===me);
+    if(mine&&mine.t&&mine.t!=='X'&&mine.t!=='')combined[k]=mine.t;
+  });
+  Object.entries(ALL_SHIFTS[me]||{}).forEach(([k,t])=>{
+    const p=k.split('-');if(+p[1]!==CM)return;
+    if(t&&t!=='X'&&t!=='__DEL__'&&t!=='')combined[k]=t;
+    else delete combined[k];
+  });
+  const pages=[];
+  Object.entries(combined).forEach(([k,t])=>{
+    const p=k.split('-');
+    const dateStr=p[0]+'-'+String(+p[1]).padStart(2,'0')+'-'+String(+p[2]).padStart(2,'0');
+    const isLeave=['特休','病假','事假','補休'].includes(t);
+    pages.push({
+      properties:{
+        '員工':me,
+        'date:日期:start':dateStr,
+        'date:日期:is_datetime':0,
+        '班次':isLeave?'':t,
+        '類型':isLeave?t:'出勤',
+        '月份':CM+'月',
+        '已確認':'__YES__'
+      }
+    });
+  });
+  if(!pages.length)return;
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:1000,
+      messages:[{role:'user',content:`請用Notion MCP工具把以下班表資料寫入資料庫（data_source_id: ${NOTION_SCHEDULE_DS}），先刪除同月份同員工的舊資料再寫入：
+${JSON.stringify(pages)}`}],
+      mcp_servers:[{type:'url',url:'https://mcp.notion.com/mcp',name:'notion-mcp'}]
+    })
+  });
 }
 
 /* ── done ── */
