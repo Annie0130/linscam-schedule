@@ -32,8 +32,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .progress-pct{font-size:11px;font-weight:700;color:#0f6e56;min-width:32px;text-align:right}
 .progress-pct.warn{color:#ba7517}.progress-pct.over{color:#c0392b}
 .info-strip{display:grid;gap:5px;padding:10px 16px;background:#fff;border-bottom:1px solid #e8e8e2}
-.info-strip.ft{grid-template-columns:repeat(5,1fr)}
-.info-strip.pt{grid-template-columns:repeat(3,1fr)}
+.info-strip.ft{grid-template-columns:repeat(6,1fr)}
+.info-strip.pt{grid-template-columns:repeat(4,1fr)}
 .ic{border-radius:9px;padding:9px 5px;text-align:center;background:#f5f5f0;border:1px solid #e8e8e2}
 .ic.ok{background:#e1f5ee;border-color:#5dcaa5}
 .ic.warn{background:#faeeda;border-color:#ef9f27}
@@ -490,7 +490,9 @@ const STAFF=[
   {name:'Eason',c:'#639922',bg:'#EAF3DE',t:'#27500A',hired:null,usedBefore:0,partTime:true},
 ];
 
-const REQUIRED={2026:{1:21,2:15,3:22,4:20,5:22,6:22,7:22,8:22,9:20,10:20,11:22,12:21}};
+const REQUIRED={2026:{1:22,2:14,3:22,4:20,5:20,6:21,7:23,8:21,9:20,10:20,11:21,12:22}};
+/* 每月放假天數（週六日 + 國定假日） */
+const DAYS_OFF={2026:{1:9,2:14,3:9,4:10,5:11,6:9,7:8,8:10,9:10,10:11,11:9,12:9}};
 
 const HOLIDAYS={
   '2026-1-1':'元旦',
@@ -624,15 +626,19 @@ let admY=2026,admM=3;
 let notionSelMonth=3,notionSelStaff=new Set(STAFF.map(s=>s.name));
 
 function myS(){return ALL_SHIFTS[me]||{};}
-/* 顯示用：優先顯示本次自填，若沒有則顯示EX歷史 */
+/* 顯示用：優先顯示本次自填，若沒有或已刪除則顯示EX歷史 */
 function getMyShift(k){
   const own=ALL_SHIFTS[me]&&ALL_SHIFTS[me][k];
-  if(own!==undefined)return own; // 本次有填（含刪除標記''）
+  if(own==='__DEL__')return null; // 本次明確刪除，不顯示EX歷史
+  if(own&&own!=='')return own;    // 本次有填
   const ex=EX[k]&&EX[k].find(x=>x.s===me);
   return ex?ex.t:null;
 }
-/* 判斷此日是否「本次已填」（用於統計和填寫邏輯）*/
-function getOwnShift(k){return ALL_SHIFTS[me]&&ALL_SHIFTS[me][k];}
+/* 判斷此日是否「本次已填有效班次」(__DEL__=已刪，視為未填) */
+function getOwnShift(k){
+  const v=ALL_SHIFTS[me]&&ALL_SHIFTS[me][k];
+  return(v&&v!=='__DEL__'&&v!=='')?v:null;
+}
 function sc(n){return STAFF.find(s=>s.name===n)||{c:'#888',bg:'#eee',t:'#444',usedBefore:0,partTime:true};}
 function isPT(n){return(STAFF.find(s=>s.name===n)||{partTime:true}).partTime;}
 function key(y,m,d){return y+'-'+m+'-'+d}
@@ -651,35 +657,40 @@ function legalQ(hired){
 function getQuota(n){const s=STAFF.find(x=>x.name===n);return s?.manualQuota!==undefined?s.manualQuota:legalQ(s?.hired||null);}
 function getUsedBefore(n){return STAFF.find(x=>x.name===n)?.usedBefore||0;}
 function getReq(y,m){return(REQUIRED[y]&&REQUIRED[y][m])||22;}
+function getDaysOff(y,m,lvThis){
+  const base=(DAYS_OFF[y]&&DAYS_OFF[y][m])||0;
+  return base+(lvThis||0); // 基本放假天數 + 本月特休/請假天數
+}
 
 function getStats(name,y,m){
   name=name||me;y=y||CY;m=m||CM;
   /* 合併EX歷史 + 本次填寫，本次填寫優先（可覆蓋EX）*/
   const combined={};
-  // 先載入EX歷史
   Object.entries(EX).forEach(([k,arr])=>{
     const p=k.split('-');
-    if(+p[0]!==y||+p[1]!==m)return; // 只看當月
+    if(+p[0]!==y||+p[1]!==m)return;
     const mine=arr.find(x=>x.s===name);
     if(mine&&mine.t&&mine.t!=='X'&&mine.t!=='')combined[k]=mine.t;
   });
-  // 再用本次填寫覆蓋（包含刪除：空字串或undefined代表已刪）
   const own=ALL_SHIFTS[name]||{};
   Object.entries(own).forEach(([k,t])=>{
     const p=k.split('-');
     if(+p[0]!==y||+p[1]!==m)return;
-    if(t&&t!=='X'&&t!=='')combined[k]=t;
-    else delete combined[k]; // 員工明確刪除
+    if(t&&t!=='X'&&t!==''&&t!=='__DEL__')combined[k]=t;
+    else delete combined[k];
   });
   const arr=Object.entries(combined);
   const work=arr.filter(([,t])=>!LEAVES.includes(t));
-  const lvThis=arr.filter(([,t])=>t==='特休').length;
+  /* ownLv：只算本次自填的特休，EX歷史特休已含在usedBefore裡不重複加 */
+  const ownLv=Object.entries(own).filter(([k,t])=>{
+    const p=k.split('-');return+p[0]===y&&+p[1]===m&&t==='特休'&&t!=='__DEL__';
+  }).length;
   const quota=getQuota(name);
   const usedBefore=getUsedBefore(name);
-  const rem=quota-(usedBefore+lvThis);
+  const rem=quota-(usedBefore+ownLv);
   const required=getReq(y,m);
   const bd={};work.forEach(([,t])=>{bd[t]=(bd[t]||0)+1;});
-  return{work:work.length,lvThis,quota,usedBefore,totalUsed:usedBefore+lvThis,rem,bd,required,remReq:required-work.length};
+  return{work:work.length,lvThis:ownLv,quota,usedBefore,totalUsed:usedBefore+ownLv,rem,bd,required,remReq:required-work.length};
 }
 
 function chM(d){CM+=d;if(CM>12){CM=1;CY++;}if(CM<1){CM=12;CY--;}document.getElementById('mlbl').textContent=CY+'年 '+MN[CM-1];rCal();rListView();updInfo();}
@@ -766,6 +777,7 @@ function updProgress(){
 function updInfo(){
   updProgress();
   const{work,lvThis,quota,usedBefore,totalUsed,rem,bd,required,remReq}=getStats();
+  const daysOff=getDaysOff(CY,CM,lvThis);
   const pt=isPT(me);
   const strip=document.getElementById('istrip');
   strip.className='info-strip '+(pt?'pt':'ft');
@@ -774,10 +786,21 @@ function updInfo(){
   const lvV=quota===0?'—':(rem<0?'-'+(-rem):String(rem));
   const lvU=quota===0?'無特休':rem<0?'已超額！':'天可用';
   if(pt){
-    strip.innerHTML=`<div class="ic"><div class="ic-l">本月出勤</div><div class="ic-v">${work}</div><div class="ic-u">天</div></div><div class="ic ${lvCls}"><div class="ic-l">${lvLbl}</div><div class="ic-v">${lvV}</div><div class="ic-u">${lvU}</div></div><div class="ic"><div class="ic-l">本月特休</div><div class="ic-v">${lvThis}</div><div class="ic-u">天</div></div>`;
+    strip.innerHTML=`
+      <div class="ic"><div class="ic-l">本月出勤</div><div class="ic-v">${work}</div><div class="ic-u">天</div></div>
+      <div class="ic warn"><div class="ic-l">本月放假${lvThis>0?'（含特休）':''}</div><div class="ic-v">${daysOff}</div><div class="ic-u">天</div></div>
+      <div class="ic"><div class="ic-l">本月出勤</div><div class="ic-v">${work}</div><div class="ic-u">天</div></div>
+      <div class="ic ${lvCls}"><div class="ic-l">${lvLbl}</div><div class="ic-v">${lvV}</div><div class="ic-u">${lvU}</div></div>
+      <div class="ic"><div class="ic-l">本月特休</div><div class="ic-v">${lvThis}</div><div class="ic-u">天</div></div>`;
   }else{
     const reqCls=remReq<0?'danger':remReq<=3?'warn':'blue';
-    strip.innerHTML=`<div class="ic blue"><div class="ic-l">本月應排班</div><div class="ic-v">${required}</div><div class="ic-u">天</div></div><div class="ic"><div class="ic-l">已填出勤</div><div class="ic-v">${work}</div><div class="ic-u">天</div></div><div class="ic ${reqCls}"><div class="ic-l">剩餘需排班</div><div class="ic-v">${remReq<0?0:remReq}</div><div class="ic-u">${remReq<0?'已超出':remReq===0?'已完成':'天待填'}</div></div><div class="ic ${lvCls}"><div class="ic-l">${lvLbl}</div><div class="ic-v">${lvV}</div><div class="ic-u">${lvU}</div></div><div class="ic"><div class="ic-l">本月新增特休</div><div class="ic-v">${lvThis}</div><div class="ic-u">天</div></div>`;
+    strip.innerHTML=`
+      <div class="ic blue"><div class="ic-l">本月應排班</div><div class="ic-v">${required}</div><div class="ic-u">天</div></div>
+      <div class="ic warn"><div class="ic-l">本月放假${lvThis>0?'（含特休）':''}</div><div class="ic-v">${daysOff}</div><div class="ic-u">天</div></div>
+      <div class="ic"><div class="ic-l">已填出勤</div><div class="ic-v">${work}</div><div class="ic-u">天</div></div>
+      <div class="ic ${reqCls}"><div class="ic-l">剩餘需排班</div><div class="ic-v">${remReq<0?0:remReq}</div><div class="ic-u">${remReq<0?'已超出':remReq===0?'已完成':'天待填'}</div></div>
+      <div class="ic ${lvCls}"><div class="ic-l">${lvLbl}</div><div class="ic-v">${lvV}</div><div class="ic-u">${lvU}</div></div>
+      <div class="ic"><div class="ic-l">本月新增特休</div><div class="ic-v">${lvThis}</div><div class="ic-u">天</div></div>`;
   }
   const pills=document.getElementById('pills');pills.innerHTML='';
   const hasPills=Object.keys(bd).length>0||lvThis>0;
@@ -916,18 +939,22 @@ function openDP(y,m,d){
   else cw.innerHTML='<span class="cw-none">當天尚無其他同事排班</span>';
   /* sel：用getOwnShift判斷按鈕高亮（只看本次填的，不看EX歷史） */
   const sel=getOwnShift(k);
-  const{quota,rem,usedBefore}=getStats();
+  const{quota,rem,usedBefore,lvThis:ownLv}=getStats();
   const te=document.getElementById('tbns');te.innerHTML='';
   TIMES.forEach(tt=>{const b=document.createElement('div');b.className='tb'+(sel===tt?' sel':'');b.textContent=tt;b.onclick=()=>setShift(tt);te.appendChild(b);});
   const le=document.getElementById('lbns');le.innerHTML='';
   LEAVES.forEach(lv=>{
-    const isOver=lv==='特休'&&rem<=0&&sel!==lv;
+    /* isOver：只有「本次新填後會超額」且「目前這天還沒選特休」才標紅 */
+    const newTotal=usedBefore+ownLv+(sel==='特休'?0:1);
+    const isOver=lv==='特休'&&newTotal>quota&&sel!==lv&&quota>0;
     const b=document.createElement('div');b.className='tb'+(sel===lv?' lsel':isOver?' over':'');
-    b.textContent=lv+(isOver?' ！':'');
+    b.textContent=lv;
     b.onclick=()=>{
       if(lv==='特休'&&quota===0){alert('年資未滿6個月，目前無特休天數。');return;}
-      if(lv==='特休'&&me==='宇玟'&&usedBefore>=quota){if(!confirm('特休已超額，確定還要繼續新增嗎？'))return;}
-      else if(isOver){if(!confirm('特休已用完（共'+quota+'天），確定繼續新增嗎？'))return;}
+      /* 超額時只是提示，不攔截，讓員工自行決定 */
+      if(lv==='特休'&&isOver){
+        if(!confirm('特休已用完（共'+quota+'天），確定繼續新增嗎？'))return;
+      }
       setShift(lv);
     };
     le.appendChild(b);
@@ -940,8 +967,15 @@ function openDP(y,m,d){
 
 function setShift(t){
   const k=key(selDay.y,selDay.m,selDay.d);
+  if(!ALL_SHIFTS[me])ALL_SHIFTS[me]={};
   /* 用 getOwnShift 判斷：本次填的和要選的一樣才是「取消」 */
-  if(getOwnShift(k)===t)delete ALL_SHIFTS[me][k];else ALL_SHIFTS[me][k]=t;
+  if(getOwnShift(k)===t){
+    // 取消：若是EX歷史則標記__DEL__，否則直接刪
+    const inEX=EX[k]&&EX[k].find(x=>x.s===me);
+    if(inEX)ALL_SHIFTS[me][k]='__DEL__';else delete ALL_SHIFTS[me][k];
+  }else{
+    ALL_SHIFTS[me][k]=t;
+  }
   const cell=document.querySelector('.cc.picked');if(cell){cell.classList.add('flash');setTimeout(()=>cell.classList.remove('flash'),400);}
   updInfo();updList();if(curView==='cal')rCal();else rListView();openDP(selDay.y,selDay.m,selDay.d);
 }
@@ -949,8 +983,9 @@ function addCust(){const t=document.getElementById('cust').value.trim();if(t&&se
 function clearDay(){
   if(!selDay)return;
   const k=key(selDay.y,selDay.m,selDay.d);
+  if(!ALL_SHIFTS[me])ALL_SHIFTS[me]={};
   const inEX=EX[k]&&EX[k].find(x=>x.s===me);
-  if(inEX){ALL_SHIFTS[me][k]='';}else{delete ALL_SHIFTS[me][k];}
+  if(inEX){ALL_SHIFTS[me][k]='__DEL__';}else{delete ALL_SHIFTS[me][k];}
   updInfo();updList();if(curView==='cal')rCal();else rListView();openDP(selDay.y,selDay.m,selDay.d);
 }
 function closeDP(){selDay=null;document.getElementById('dp-wrap').style.display='none';if(curView==='cal')rCal();else rListView();}
@@ -1002,10 +1037,10 @@ function updList(){
   });
 }
 function delS(k){
-  const p=k.split('-');const y=+p[0],m=+p[1];
+  if(!ALL_SHIFTS[me])ALL_SHIFTS[me]={};
   const inEX=EX[k]&&EX[k].find(x=>x.s===me);
-  if(inEX){ALL_SHIFTS[me][k]='';}  // EX歷史：標記為已刪除
-  else{delete ALL_SHIFTS[me][k];}   // 自填的：直接刪
+  if(inEX){ALL_SHIFTS[me][k]='__DEL__';}  // EX歷史：標記為已刪除
+  else{delete ALL_SHIFTS[me][k];}           // 自填的：直接刪
   updInfo();updList();if(curView==='cal')rCal();else rListView();
 }
 
