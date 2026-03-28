@@ -194,12 +194,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .asc-val.ok{color:#0f6e56}
 /* done */
 .done-wrap{padding:16px}
-.done-box{background:#e1f5ee;border:1px solid #5dcaa5;border-radius:14px;padding:22px;text-align:center;margin-bottom:14px}
-.done-box.warn{background:#faeeda;border-color:#ef9f27}
-.done-t{font-size:20px;font-weight:700;color:#085041;margin-bottom:5px}
-.done-box.warn .done-t{color:#633806}
-.done-s{font-size:13px;color:#0f6e56}
-.done-box.warn .done-s{color:#854f0b}
+/* 新的大型完成視覺 */
+.done-hero{text-align:center;padding:32px 20px 24px;background:linear-gradient(160deg,#e1f5ee 0%,#f0faf5 100%);border-radius:16px;margin-bottom:16px;border:1px solid #5dcaa5}
+.done-hero.warn{background:linear-gradient(160deg,#faeeda 0%,#fff8ee 100%);border-color:#ef9f27}
+.done-check{width:64px;height:64px;border-radius:50%;background:#0f6e56;color:#fff;font-size:28px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-weight:700}
+.done-hero.warn .done-check{background:#ba7517}
+.done-hero-t{font-size:22px;font-weight:700;color:#085041;margin-bottom:6px}
+.done-hero.warn .done-hero-t{color:#633806}
+.done-hero-s{font-size:13px;color:#0f6e56}
+.done-hero.warn .done-hero-s{color:#854f0b}
+/* 返回首頁大按鈕 */
+.done-actions{margin-top:16px}
+.btn-home{width:100%;padding:14px;border-radius:12px;background:#185fa5;color:#fff;border:none;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:background .15s;margin-bottom:10px}
+.btn-home:hover{background:#0c447c}
+.btn-home:active{transform:scale(0.98)}
+.btn-home-icon{font-size:20px}
+.done-sub-actions{display:flex;gap:8px}
+.done-sub-actions .btn{flex:1;text-align:center}
 .sum-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-bottom:12px}
 .sc{background:#f5f5f0;border-radius:10px;padding:12px;text-align:center}
 .sc.danger{background:#fcebeb}
@@ -245,12 +256,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div id="v0">
   <div class="hd"><div class="hd-logo">林相攝影 <small>員工排班系統</small></div></div>
   <div class="s0-wrap">
-    <div class="notice">選擇你的名字開始填寫本月班表。<br>特休依勞基法第38條及入職日自動計算。<br><span style="color:#c0392b">紅色邊框 = 特休超額，請與老闆確認。</span></div>
+    <div class="notice">選擇你的名字開始填寫本月班表。<br>特休依勞基法第38條及入職日自動計算。<br>每月<b>前20天</b>開放排班，21日後鎖定。<br><span style="color:#c0392b">紅色邊框 = 特休超額，請與老闆確認。</span></div>
     <div class="section-lbl">正職員工</div>
     <div class="sgrid" id="sgrid-ft"></div>
     <div class="section-lbl">工讀生（不規定應排班天數）</div>
     <div class="sgrid" id="sgrid-pt"></div>
-    <div class="sgrid"><div class="sbtn admin-btn" onclick="openAdminModal()">管理者模式 🔒</div></div>
+    <div class="sgrid"><div class="sbtn admin-btn" onclick="openAdminModal()">老闆 / 管理者 🔒</div></div>
   </div>
 </div>
 
@@ -398,14 +409,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
+
 <!-- ══ STEP 2 ══ -->
 <div id="v2" style="display:none">
   <div class="hd"><div class="hd-logo">林相攝影 <small>班表已送出</small></div></div>
   <div class="done-wrap">
-    <div class="done-box" id="done-box">
-      <div class="done-t" id="done-t"></div>
-      <div class="done-s" id="done-s"></div>
+    <!-- 大型完成視覺 -->
+    <div class="done-hero" id="done-hero">
+      <div class="done-check">✓</div>
+      <div class="done-hero-t" id="done-t"></div>
+      <div class="done-hero-s" id="done-s"></div>
     </div>
+    <!-- 統計 & 匯出 -->
     <div class="tab-row">
       <button class="tab active" onclick="swTab('s',this)">本月摘要</button>
       <button class="tab" onclick="swTab('e',this)">文字匯出</button>
@@ -415,9 +430,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="exp-area" id="exparea"></div>
       <button class="btn p full" onclick="cpExp()">複製文字</button>
     </div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn full" onclick="goStep(0)">換人填寫</button>
-      <button class="btn full p" onclick="goStep(1)">重新編輯</button>
+    <!-- 操作按鈕 -->
+    <div class="done-actions">
+      <button class="btn-home" onclick="goStep(0)">
+        <span class="btn-home-icon">⌂</span>
+        返回首頁
+      </button>
+      <div class="done-sub-actions">
+        <button class="btn sm" onclick="goStep(1)">重新編輯</button>
+      </div>
     </div>
   </div>
 </div>
@@ -465,7 +486,7 @@ const STAFF=[
   {name:'孟庭', c:'#1D9E75',bg:'#E1F5EE',t:'#085041',hired:'2026-03-01',usedBefore:0,partTime:false},
   {name:'琳',   c:'#D85A30',bg:'#FAECE7',t:'#712B13',hired:'2026-03-01',usedBefore:0,partTime:false},
   {name:'霖',   c:'#D4537E',bg:'#FBEAF0',t:'#72243E',hired:null,usedBefore:0,partTime:true},
-  {name:'容',   c:'#888780',bg:'#F1EFE8',t:'#444441',hired:null,usedBefore:0,partTime:true},
+  {name:'容',   c:'#888780',bg:'#F1EFE8',t:'#444441',hired:null,usedBefore:0,partTime:true,isBoss:true},
   {name:'Eason',c:'#639922',bg:'#EAF3DE',t:'#27500A',hired:null,usedBefore:0,partTime:true},
 ];
 
@@ -647,6 +668,7 @@ function rStaffGrid(){
   const ftG=document.getElementById('sgrid-ft');ftG.innerHTML='';
   const ptG=document.getElementById('sgrid-pt');ptG.innerHTML='';
   STAFF.forEach(s=>{
+    if(s.isBoss)return; // 老闆不在員工選擇列表
     const q=getQuota(s.name),ub=s.usedBefore||0,rem=q-ub,isOver=rem<0;
     const isNew=!!s.hired&&s.name!=='宇玟';
     const b=document.createElement('div');
@@ -775,7 +797,14 @@ function rCal(){
       if(others.length>3){const more=document.createElement('span');more.style.cssText='font-size:8px;color:#aaa;';more.textContent='+'+(others.length-3)+'人';wrap.appendChild(more);}
       cell.appendChild(wrap);
     }
-    cell.onclick=()=>openDP(y,m,d);
+    /* ── 前20天才可排班，21日後鎖定 ── */
+    if(d<=20){
+      cell.onclick=()=>openDP(y,m,d);
+    }else{
+      cell.style.opacity='0.4';
+      cell.style.cursor='not-allowed';
+      cell.style.background='#fafaf8';
+    }
     cal.appendChild(cell);
   }
 }
@@ -806,7 +835,10 @@ function rListView(){
     const right=document.createElement('div');right.className='lv-right';
     if(mine&&mine!=='X'&&mine!==''){const mt=document.createElement('span');mt.className='lv-my';const isLv=LEAVES.includes(mine);mt.style.background=isLv?'#faeeda':S.bg;mt.style.color=isLv?'#633806':S.t;mt.textContent=mine;right.appendChild(mt);}
     else{const add=document.createElement('span');add.className='lv-add';add.textContent='+ 填入';right.appendChild(add);}
-    hd.appendChild(right);hd.onclick=()=>openDP(CY,CM,d);card.appendChild(hd);
+    hd.appendChild(right);
+    if(d<=20){hd.onclick=()=>openDP(CY,CM,d);}
+    else{hd.style.cursor='not-allowed';hd.style.opacity='0.5';right.innerHTML='<span style="font-size:11px;color:#ccc">🔒 截止日已過</span>';}
+    card.appendChild(hd);
     if(others.length){
       const ow=document.createElement('div');ow.className='lv-others';
       others.forEach(sh=>{const os=sc(sh.s);const chip=document.createElement('span');chip.className='lv-other';chip.style.background=os.bg;chip.style.color=os.t;chip.textContent=sh.s+' '+sh.t;ow.appendChild(chip);});
@@ -953,6 +985,7 @@ function showAdmin(){
 function rAdminView(){
   const sg=document.getElementById('admin-stats');sg.innerHTML='';
   STAFF.forEach(s=>{
+    if(s.isBoss)return; // 老闆不顯示在員工統計
     const st=getStats(s.name,admY,admM);
     const isOver=st.rem<0;const pt=s.partTime;
     const c=document.createElement('div');c.className='asc';
@@ -1079,9 +1112,11 @@ function doSubmit(){
 function rDone(){
   const{work,lvThis,quota,usedBefore,totalUsed,rem,bd,required}=getStats();
   const isOver=rem<0;const pt=isPT(me);
-  document.getElementById('done-box').className='done-box'+(isOver?' warn':'');
+  const hero=document.getElementById('done-hero');
+  hero.className='done-hero'+(isOver?' warn':'');
   document.getElementById('done-t').textContent=me+' 的班表已送出！'+(isOver?' ⚠':'');
-  document.getElementById('done-s').textContent=(pt?'出勤 '+work+' 天':'出勤 '+work+'/'+required+' 天')+' ，本月特休 '+lvThis+' 天，年度累計 '+totalUsed+'/'+quota+' 天';
+  document.getElementById('done-s').textContent=(pt?'出勤 '+work+' 天':'出勤 '+work+'/'+required+' 天')+
+    '　特休 '+lvThis+' 天　年度累計 '+totalUsed+'/'+quota+' 天';
   const sg=document.getElementById('sgrid2');sg.innerHTML='';
   const cards=pt?[{l:'出勤天數',v:work},{l:'本月特休',v:lvThis}]:[{l:'應排班',v:required},{l:'出勤天數',v:work},{l:'本月特休',v:lvThis}];
   cards.forEach(({l,v})=>{const c=document.createElement('div');c.className='sc';c.innerHTML='<div class="sc-l">'+l+'</div><div class="sc-v">'+v+'</div>';sg.appendChild(c);});
